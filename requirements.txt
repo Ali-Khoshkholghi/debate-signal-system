@@ -1,0 +1,18 @@
+# stock-signal-system provides the evidence-gathering agents this project's
+# Judge calls (classify_ticker_agent, price/fundamentals/risk/news agents,
+# models/router.py's routing logic). Installed as a normal pip dependency,
+# not copied -- see README.md "Dependency on stock-signal-system".
+#
+# Pinned to the v0.1.0 tag (merged to main, packaged as an installable
+# project) so this repo resolves on its own for anyone who clones it
+# without the sibling checkout. NOTE: as of this commit the tag exists
+# locally but main hasn't been pushed yet -- this URL will 404 until that
+# push happens.
+stock-signal-system @ git+https://github.com/Ali-Khoshkholghi/stock-signal-system.git@v0.1.0
+
+langgraph>=1.2.0
+pydantic>=2.0.0
+python-dotenv>=1.2.2
+
+# Dev / test only
+pytest>=8.0.0

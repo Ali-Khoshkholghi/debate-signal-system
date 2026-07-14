@@ -1,0 +1,13 @@
+# Local dev convenience only: same as requirements.txt, but installs
+# stock-signal-system from the sibling checkout instead of the pinned tag,
+# so edits there are picked up immediately without re-tagging. Not used by
+# anyone cloning this repo standalone -- see requirements.txt for that path.
+# Quoted because the sibling folder name has spaces in it.
+-e "../stock_signal_system - Reliability-Trust  "
+
+langgraph>=1.2.0
+pydantic>=2.0.0
+python-dotenv>=1.2.2
+
+# Dev / test only
+pytest>=8.0.0
