@@ -1,7 +1,7 @@
 import sys
 import uuid
 
-from judge.judge_agent import run_judge
+from judge_graph import run_judge
 
 
 def main() -> None:
