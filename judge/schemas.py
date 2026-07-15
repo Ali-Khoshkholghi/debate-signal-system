@@ -36,7 +36,7 @@ class ExtractedClaims(BaseModel):
 # whether any interpretation built on top of that anchor is reasonable --
 # that stays the Judge's future ruling job, not this step's. ---
 
-AnchorType = Literal["value", "relational", "no_match"]
+AnchorType = Literal["value", "relational", "no_match", "named_but_no_value"]
 ComparisonOperator = Literal["above", "below"]
 
 
@@ -47,7 +47,14 @@ class ClaimAnchor(BaseModel):
     metric/claimed_value; "relational" claims (e.g. "trading above the
     50-day SMA") populate metric_a/operator/metric_b. "no_match" means the
     claim references a concept with no corresponding evidence field at all
-    (e.g. "momentum") -- neither group is populated in that case."""
+    (e.g. "momentum") -- neither group is populated in that case.
+    "named_but_no_value" means a real metric IS named (e.g. "P/E ratio")
+    but only a vague qualitative descriptor ("high", "strong",
+    "significant") is asserted about it, no actual number/category --
+    populates metric only, never claimed_value. Distinct from "no_match"
+    (whose field genuinely doesn't exist) so the two stay separable if this
+    data is ever analyzed later, even though verify_claim scores both as
+    unverifiable today."""
     anchor_type: AnchorType
     metric: str | None = None
     claimed_value: str | None = None
