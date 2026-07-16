@@ -12,6 +12,7 @@ every downstream verification/ruling step inherits the error.
 """
 import json
 import logging
+import re
 from dataclasses import asdict, dataclass
 
 import config
@@ -118,6 +119,17 @@ PERCENT_SCALE_TOLERANCE_PP = 2.0
 # don't get an unreasonably tight band.
 RELATIVE_TOLERANCE = 0.10
 RELATIVE_TOLERANCE_FLOOR = 0.5
+# Unit-shorthand suffixes a debater might attach to a large-magnitude
+# number (currently only total_assets is big enough to plausibly attract
+# these, but this is a property of the claimed-value string itself, not a
+# per-field allow-list, so it applies to any numeric field). Case-
+# insensitive; checked as a whole trailing word/letter, not a substring.
+_UNIT_SUFFIX_MULTIPLIERS = {
+    "b": 1_000_000_000, "bn": 1_000_000_000, "billion": 1_000_000_000,
+    "m": 1_000_000, "mm": 1_000_000, "million": 1_000_000,
+    "k": 1_000, "thousand": 1_000,
+}
+_CLAIMED_VALUE_RE = re.compile(r"^(-?\d+\.?\d*)\s*([a-zA-Z]+)?$")
 
 
 @dataclass
@@ -143,12 +155,44 @@ def _evidence_gate_reason(agent_result: dict | None) -> str | None:
     return None
 
 
+def _parse_claimed_float(claimed_value: str) -> float | None:
+    """Parses a claimed numeric string into a float, deterministically
+    normalizing what a debater might naturally attach to a number --
+    '%', ',', '$', and a trailing unit-shorthand word ('38.9 billion',
+    '38.9B', '38.9bn') -- rather than asking the anchor-extraction model
+    to do that arithmetic itself. The model's job is to identify what was
+    asserted (it already does, faithfully, e.g. claimed_value='38.9
+    billion'); doing the unit multiplication in code keeps that
+    deterministic and exact instead of relying on an LLM to get a 10+
+    digit multiplication right. Returns None for anything that doesn't
+    parse (e.g. a fabricated placeholder like 'high'), same as the
+    original bare float() call -- verify_claim treats that as no match,
+    never a crash."""
+    try:
+        cleaned = claimed_value.replace("%", "").replace(",", "").replace("$", "").strip()
+    except AttributeError:
+        return None
+    match = _CLAIMED_VALUE_RE.match(cleaned)
+    if not match:
+        return None
+    number_part, suffix = match.groups()
+    try:
+        value = float(number_part)
+    except ValueError:
+        return None
+    if suffix:
+        multiplier = _UNIT_SUFFIX_MULTIPLIERS.get(suffix.lower())
+        if multiplier is None:
+            return None
+        value *= multiplier
+    return value
+
+
 def _values_match(claimed_value: str, real_value, metric: str) -> bool:
     if metric in CATEGORICAL_FIELDS or isinstance(real_value, str):
         return claimed_value.strip().lower() == str(real_value).strip().lower()
-    try:
-        claimed_float = float(claimed_value.replace("%", "").replace(",", "").strip())
-    except (ValueError, AttributeError):
+    claimed_float = _parse_claimed_float(claimed_value)
+    if claimed_float is None:
         return False
     if metric in PERCENT_SCALE_FIELDS:
         return abs(claimed_float - real_value) <= PERCENT_SCALE_TOLERANCE_PP

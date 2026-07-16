@@ -23,7 +23,7 @@ from judge.schemas import Claim, ClaimAnchor, SentimentAnchor
 from tests.conftest import make_agent_result, make_structured_result
 
 
-def _fundamentals_evidence(pe_ratio=23.4, quote_type="EQUITY", confidence=0.9) -> dict:
+def _fundamentals_evidence(pe_ratio=23.4, quote_type="EQUITY", confidence=0.9, total_assets=400_000_000_000) -> dict:
     expected_fields = FUNDAMENTALS_ETF_FIELDS if quote_type == "ETF" else FUNDAMENTALS_EQUITY_FIELDS
     output = {
         "ticker": "AAPL",
@@ -35,7 +35,7 @@ def _fundamentals_evidence(pe_ratio=23.4, quote_type="EQUITY", confidence=0.9) -
         "profit_margin": 25.3,
         "expense_ratio": None if quote_type == "EQUITY" else 0.03,
         "nav_price": None if quote_type == "EQUITY" else 450.0,
-        "total_assets": None if quote_type == "EQUITY" else 400_000_000_000,
+        "total_assets": None if quote_type == "EQUITY" else total_assets,
         "category": None if quote_type == "EQUITY" else "Large Blend",
         "dividend_yield": None if quote_type == "EQUITY" else 1.2,
         "confidence": confidence,
@@ -237,6 +237,34 @@ def test_verify_claim_risk_technical_categorical_risk_level_claim_is_verified(mo
 
     assert result.verdict == "verified"
     assert result.real_value == "medium"
+
+
+def test_verify_claim_total_assets_billion_shorthand_matches_real_value(monkeypatch):
+    """Regression test for a real live-run bug: Bull claimed 'TQQQ has a
+    massive asset base of over $38.9 billion' against a real total_assets
+    of 38968848384 (== $38.968... billion). _values_match() only ever
+    stripped '%' and ',' before float() -- the word 'billion' survived
+    into the string, float() raised, and the except-branch returned False
+    (contradicted) rather than recognizing $38.9B as the same number,
+    within the existing 10% relative tolerance for a rounded transcript
+    figure. This flipped TQQQ's ruling from what should have been
+    INCONCLUSIVE (Bull tying Bear) to BEAR winning.
+
+    Confirmed live: the anchor-extraction step already faithfully returns
+    claimed_value='38.9 billion' -- this test mocks that real observed
+    extraction output (not a hypothetical) and exercises the comparison
+    layer alone, since that's where the actual bug lives."""
+    claim = Claim(claim_type="fundamentals", claim_text="TQQQ has a massive asset base of over $38.9 billion", checkable=True)
+    evidence = _fundamentals_evidence(quote_type="ETF", total_assets=38968848384)
+    monkeypatch.setattr(
+        judge_agent_mod, "call_structured_model",
+        lambda *a, **k: make_structured_result(data=ClaimAnchor(anchor_type="value", metric="total_assets", claimed_value="38.9 billion")),
+    )
+
+    result = verify_claim(claim, evidence)
+
+    assert result.verdict == "verified"
+    assert result.real_value == "38968848384"
 
 
 def test_verify_claim_etf_fundamentals_mismatch_is_unverifiable_not_contradicted(monkeypatch):
