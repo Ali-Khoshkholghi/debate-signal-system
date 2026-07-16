@@ -690,8 +690,16 @@ def judge_verify_round2(state: DebateState) -> dict:
     return _verify_round(state, round_num=2)
 
 
-# Explicit placeholder, not a tuned value -- retune once real debate runs
-# exist to look at (see project decision log).
+# Empirically checked, not just a placeholder anymore: across 5 live-tested
+# tickers (AAPL, TSLA, MSFT, TQQQ, GOOGL, run post-bug-fixes), credibility
+# gaps clustered at 0.0 (genuine ties), 0.333, or 1.0 -- nothing landed in
+# the 0.15-0.25 range where MARGIN's exact value would change the outcome.
+# At typical claim counts (5-12 per side), gaps come out as coarse
+# fractions that tend to land either at an exact tie or a clearly decisive
+# gap, so MARGIN rarely determines the ruling in practice. Left at 0.2 as a
+# reasonable default rather than over-fit to a small sample (5 debates) --
+# revisit if a larger batch or a different claim-count regime shows
+# otherwise.
 FINAL_RULING_MARGIN = 0.2
 
 
