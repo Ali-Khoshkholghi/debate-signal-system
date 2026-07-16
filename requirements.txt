@@ -3,12 +3,12 @@
 # models/router.py's routing logic). Installed as a normal pip dependency,
 # not copied -- see README.md "Dependency on stock-signal-system".
 #
-# Pinned to the v0.1.0 tag (merged to main, packaged as an installable
+# Pinned to the v0.1.1 tag (merged to main, packaged as an installable
 # project) so this repo resolves on its own for anyone who clones it
-# without the sibling checkout. NOTE: as of this commit the tag exists
-# locally but main hasn't been pushed yet -- this URL will 404 until that
-# push happens.
-stock-signal-system @ git+https://github.com/Ali-Khoshkholghi/stock-signal-system.git@v0.1.0
+# without the sibling checkout. v0.1.1 adds Cerebras as a third
+# model-routing fallback tier (Gemini -> Groq -> Cerebras) in
+# models/router.py -- see that project's README for why.
+stock-signal-system @ git+https://github.com/Ali-Khoshkholghi/stock-signal-system.git@v0.1.1
 
 langgraph>=1.2.0
 pydantic>=2.0.0
