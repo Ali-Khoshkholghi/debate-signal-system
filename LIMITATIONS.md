@@ -59,6 +59,16 @@ Directionally, not a spec:
   from a case that should have been decisive. Five debates is too small a
   sample to tell which explanation is right; revisit as more tickers get
   tested.
+- **Surface the credibility gap size on Inconclusive rulings, not just the
+  label.** Any gap below `FINAL_RULING_MARGIN` (0.2) currently reports as
+  a flat "Inconclusive" — a genuine 0.0 tie and a close 0.15 near-miss
+  look identical in the output, even though the gap is already computed
+  in `judge_final_ruling` and simply discarded before it reaches the
+  report. Low-cost fix: surface the actual gap and a "weak lean toward X"
+  label alongside "Inconclusive" (e.g. `INCONCLUSIVE -- weak lean toward
+  Bull (gap: 0.068)` vs. `INCONCLUSIVE -- no lean (gap: 0.0)`), without
+  changing the underlying decision not to force a winner under genuine
+  uncertainty. Not yet built.
 - **Verifying reasoning/interpretation quality, not just facts** — see
   above. Not implemented; explicitly deferred in the verification code's
   own docstrings today.

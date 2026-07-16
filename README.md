@@ -230,6 +230,10 @@ Headline items:
   balanced arguers producing real ties, or the credibility formula being
   too coarse at typical claim counts to tell a genuine tie from a case
   that should have been decisive.
+- **Inconclusive doesn't distinguish a genuine tie from a close call** —
+  any gap under MARGIN reports as a flat "Inconclusive" today, even
+  though the gap size is already computed. A "weak lean toward X (gap:
+  0.068)" label is a low-cost future improvement.
 - **Verification doesn't check interpretation quality**, only factual
   anchors — e.g. that a P/E of 40 really is 40, never whether "this shows
   fair value" is a reasonable read of that number.
