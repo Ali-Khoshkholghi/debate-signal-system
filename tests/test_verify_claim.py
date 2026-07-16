@@ -60,6 +60,19 @@ def _price_evidence(current_price=210.0, sma_50=200.0) -> dict:
     return {"price_result": make_agent_result("price_agent", output=output, guardrail={"passed": True, "reason": "ok", "checks": {}})}
 
 
+def _risk_evidence(volatility_20d=2.3, volatility_annualized=36.51, risk_level="high", confidence=0.9) -> dict:
+    output = {
+        "ticker": "AAPL",
+        "volatility_20d": volatility_20d,
+        "volatility_annualized": volatility_annualized,
+        "risk_level": risk_level,
+        "confidence": confidence,
+        "upstream_price_ok": True,
+        "reasoning": "stub reasoning",
+    }
+    return {"risk_result": make_agent_result("risk_agent", output=output, guardrail={"passed": True, "reason": "ok", "checks": {}})}
+
+
 def _news_evidence(sentiment="positive", confidence=0.8) -> dict:
     output = {
         "ticker": "AAPL",
@@ -126,6 +139,104 @@ def test_verify_claim_relational_price_technical_claim(monkeypatch):
 
     assert result.verdict == "verified"
     assert result.evidence_agent == "price_result"
+
+
+def test_verify_claim_risk_technical_volatility_20d_claim_matches_period_specific_field(monkeypatch):
+    """Regression test for a real live-run bug: Bear claimed 'the volatility
+    of 2.3 over 20 days'. risk_result's own volatility_20d (2.3) matches
+    exactly, but until RISK_TECHNICAL_FIELDS listed volatility_20d as a
+    valid anchor field, the anchor-extraction prompt only ever offered
+    volatility_annualized as a volatility-shaped option, forcing a
+    same-concept-wrong-period match against 36.51 and a false CONTRADICTED
+    verdict.
+
+    The stub below mimics that forced-choice behavior instead of hand-
+    picking an answer: it can only return a metric that's actually present
+    in the prompt's 'Valid metric names' list, exactly as a real model is
+    constrained -- so this test is red before the allow-list fix (forced
+    onto volatility_annualized) and green after (volatility_20d becomes a
+    legal choice), without the test ever assuming which field is correct."""
+    claim = Claim(claim_type="risk_technical", claim_text="the volatility of 2.3 over 20 days", checkable=True)
+    evidence = _risk_evidence(volatility_20d=2.3, volatility_annualized=36.51)
+
+    def _period_aware_stub(system_prompt, user_prompt, schema, extra_check=None):
+        valid_line = next(line for line in system_prompt.splitlines() if line.startswith("Valid metric names"))
+        valid_fields = [f.strip() for f in valid_line.split(":", 1)[1].rstrip(".").split(",")]
+        metric = "volatility_20d" if "volatility_20d" in valid_fields else "volatility_annualized"
+        return make_structured_result(data=ClaimAnchor(anchor_type="value", metric=metric, claimed_value="2.3"))
+
+    monkeypatch.setattr(judge_agent_mod, "call_structured_model", _period_aware_stub)
+
+    result = verify_claim(claim, evidence)
+
+    assert result.verdict == "verified"
+    assert result.real_value == "2.3"
+
+
+def test_verify_claim_price_technical_sma20_claim_matches_period_specific_field(monkeypatch):
+    """Defensive coverage for the milder version of the same risk class:
+    sma_20 and sma_50 are both already in PRICE_TECHNICAL_FIELDS, so this
+    isn't broken today (unlike the risk_technical case above, which was
+    missing its field entirely). This locks in that a claim naming one
+    period ('20-day') resolves to that period's field (sma_20=205.0), not
+    the other period's field (sma_50=200.0) -- catching any future
+    regression in the lookup, even though it doesn't exercise the model
+    prompt itself (see test_extract_numeric_anchor_prompt_includes_
+    period_matching_instruction below for that)."""
+    claim = Claim(claim_type="price_technical", claim_text="the stock's 20-day moving average is around 205", checkable=True)
+    evidence = _price_evidence(current_price=210.0, sma_50=200.0)  # sma_20 defaults to 205.0
+
+    monkeypatch.setattr(
+        judge_agent_mod, "call_structured_model",
+        lambda *a, **k: make_structured_result(data=ClaimAnchor(anchor_type="value", metric="sma_20", claimed_value="205")),
+    )
+
+    result = verify_claim(claim, evidence)
+
+    assert result.verdict == "verified"
+    assert result.real_value == "205.0"
+
+
+def test_extract_numeric_anchor_prompt_includes_period_matching_instruction(monkeypatch):
+    """Locks in that the anchor-extraction system prompt actually carries
+    explicit period-matching guidance (defense-in-depth for the
+    volatility_20d/volatility_annualized and sma_20/sma_50 collision risk),
+    not just that the allow-lists happen to be complete today."""
+    captured = {}
+
+    def _capture(system_prompt, user_prompt, schema, extra_check=None):
+        captured["system_prompt"] = system_prompt
+        return make_structured_result(data=ClaimAnchor(anchor_type="value", metric="volatility_annualized", claimed_value="36.51"))
+
+    monkeypatch.setattr(judge_agent_mod, "call_structured_model", _capture)
+
+    judge_agent_mod._extract_numeric_anchor(
+        Claim(claim_type="risk_technical", claim_text="volatility is 36.51 annualized", checkable=True),
+        judge_agent_mod.RISK_TECHNICAL_FIELDS,
+    )
+
+    assert "period" in captured["system_prompt"].lower()
+
+
+def test_verify_claim_risk_technical_categorical_risk_level_claim_is_verified(monkeypatch):
+    """Supplementary mocked test locking in the downstream comparison side:
+    once anchor extraction correctly returns a categorical value anchor for
+    risk_level (post-fix behavior for adjectival phrasing like 'medium-risk
+    name'), verify_claim must resolve it via _values_match's CATEGORICAL_FIELDS
+    string-comparison branch and score it verified against the real
+    risk_level -- this was already correct once you got a 'value' anchor;
+    the bug lived entirely in the extraction step, not here."""
+    claim = Claim(claim_type="risk_technical", claim_text="This is a medium-risk name given its volatility profile.", checkable=True)
+    evidence = _risk_evidence(risk_level="medium")
+    monkeypatch.setattr(
+        judge_agent_mod, "call_structured_model",
+        lambda *a, **k: make_structured_result(data=ClaimAnchor(anchor_type="value", metric="risk_level", claimed_value="medium")),
+    )
+
+    result = verify_claim(claim, evidence)
+
+    assert result.verdict == "verified"
+    assert result.real_value == "medium"
 
 
 def test_verify_claim_etf_fundamentals_mismatch_is_unverifiable_not_contradicted(monkeypatch):
@@ -241,3 +352,69 @@ def test_verify_claim_against_live_evidence_for_a_real_ticker(tmp_path, monkeypa
 
     assert result.verdict == "verified"
     assert result.reason
+
+
+@pytest.mark.live
+def test_verify_claim_risk_technical_volatility_20d_against_live_evidence(tmp_path, monkeypatch):
+    """Real end-to-end regression check for the live-run bug: builds a claim
+    phrased exactly like the real Bear claim ('the volatility of X over 20
+    days') from a real risk_result's own volatility_20d, then verifies it
+    through the real anchor-extraction model call. Proves the fix holds
+    against a live model, not just the constrained stub above. Skipped by
+    default; run explicitly with:
+        python -m pytest tests/ -m live
+    """
+    import config as p1_config
+    from evidence.tools import ensure_run, gather_evidence
+
+    monkeypatch.setattr(p1_config, "DB_PATH", str(tmp_path / "live_verify_risk_test.db"))
+
+    ticker = "AAPL"
+    run_id = f"live-verify-risk-{ticker}"
+    ensure_run(run_id, ticker)
+    evidence = gather_evidence(ticker, run_id)
+
+    risk_output = (evidence.get("risk_result") or {}).get("output") or {}
+    volatility_20d = risk_output.get("volatility_20d")
+    if volatility_20d is None:
+        pytest.skip("live risk data had no volatility_20d to build a claim from")
+
+    claim = Claim(claim_type="risk_technical", claim_text=f"the volatility of {volatility_20d} over 20 days", checkable=True)
+
+    result = verify_claim(claim, evidence)
+
+    assert result.verdict == "verified"
+    assert result.real_value == str(volatility_20d)
+
+
+@pytest.mark.live
+def test_verify_claim_risk_technical_categorical_risk_level_against_live_evidence(tmp_path, monkeypatch):
+    """Real end-to-end regression check for the categorical-phrasing bug:
+    builds a claim using the exact adjectival phrasing that reproduced the
+    bug ('a {risk_level}-risk name'), from a real risk_result's own
+    risk_level, then verifies it through the real anchor-extraction model
+    call. Proves the fix holds against a live model, not just the mocked
+    comparison-side test above. Skipped by default; run explicitly with:
+        python -m pytest tests/ -m live
+    """
+    import config as p1_config
+    from evidence.tools import ensure_run, gather_evidence
+
+    monkeypatch.setattr(p1_config, "DB_PATH", str(tmp_path / "live_verify_risk_level_test.db"))
+
+    ticker = "AAPL"
+    run_id = f"live-verify-risk-level-{ticker}"
+    ensure_run(run_id, ticker)
+    evidence = gather_evidence(ticker, run_id)
+
+    risk_output = (evidence.get("risk_result") or {}).get("output") or {}
+    risk_level = risk_output.get("risk_level")
+    if risk_level is None:
+        pytest.skip("live risk data had no risk_level to build a claim from")
+
+    claim = Claim(claim_type="risk_technical", claim_text=f"This is a {risk_level}-risk name given its volatility profile.", checkable=True)
+
+    result = verify_claim(claim, evidence)
+
+    assert result.verdict == "verified"
+    assert result.real_value == risk_level

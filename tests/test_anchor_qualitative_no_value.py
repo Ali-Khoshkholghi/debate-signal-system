@@ -94,6 +94,12 @@ def test_extract_numeric_anchor_strong_profit_margins_is_not_a_fabricated_value(
 
 @pytest.mark.live
 def test_extract_numeric_anchor_substantial_volatility_is_not_a_fabricated_value():
+    """No period is stated ('substantial volatility', not 'over 20 days' or
+    'annualized'), so either volatility field is a legitimate match --
+    RISK_TECHNICAL_FIELDS carries both volatility_20d and
+    volatility_annualized (see judge_agent.py's field-inventory fix), and
+    this test only pins down that no number gets fabricated, not which of
+    the two equally-valid volatility fields the model names."""
     claim = Claim(claim_type="risk_technical", claim_text="This stock shows substantial volatility", checkable=True)
 
     anchor = _extract_numeric_anchor(claim, RISK_TECHNICAL_FIELDS)
@@ -101,7 +107,38 @@ def test_extract_numeric_anchor_substantial_volatility_is_not_a_fabricated_value
     assert anchor is not None
     assert anchor.anchor_type != "value", f"fabricated claimed_value: {anchor.claimed_value!r}"
     assert anchor.anchor_type == "named_but_no_value"
-    assert anchor.metric == "volatility_annualized"
+    assert anchor.metric in ("volatility_20d", "volatility_annualized")
+
+
+@pytest.mark.live
+def test_extract_numeric_anchor_medium_risk_name_is_recognized_as_categorical_value():
+    """Regression test for a related bug found in review: risk_level is a
+    CATEGORICAL field (a small fixed set of real values -- low/medium/high,
+    see judge_agent.py's CATEGORICAL_FIELDS) but shared the same shape-4
+    'vague qualitative language' guidance written for open-ended numeric
+    fields like pe_ratio. Natural adjectival phrasing ('medium-risk name')
+    was misclassified as named_but_no_value even though 'medium' names a
+    real, exact category value, not a vague descriptor -- the mirror-image
+    of this file's original bug (there, vague language was wrongly treated
+    as a real value; here, a real categorical value is wrongly treated as
+    vague language). Confirmed live and reproducible before the fix; the
+    literal phrase 'a medium risk level' already worked, so this uses the
+    exact adjectival phrasing that actually reproduced the bug."""
+    claim = Claim(
+        claim_type="risk_technical",
+        claim_text="This is a medium-risk name given its volatility profile.",
+        checkable=True,
+    )
+
+    anchor = _extract_numeric_anchor(claim, RISK_TECHNICAL_FIELDS)
+
+    assert anchor is not None
+    assert anchor.anchor_type == "value", (
+        f"regression: a real categorical value was misclassified as vague qualitative "
+        f"language (anchor_type={anchor.anchor_type!r})"
+    )
+    assert anchor.metric == "risk_level"
+    assert anchor.claimed_value is not None and anchor.claimed_value.strip().lower() == "medium"
 
 
 def _fundamentals_evidence(pe_ratio=38.16) -> dict:

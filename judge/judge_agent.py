@@ -84,16 +84,17 @@ def extract_claims(transcript: str) -> list[Claim]:
 
 # Real evidence field names, confirmed by reading stock-signal-system's own
 # agents (not assumed) -- see agents/fundamentals_agent.py, price_agent.py,
-# risk_agent.py. price_technical and risk_technical are deliberately
-# disjoint vocabularies even though price_result also carries its own
-# volatility_20d: any volatility/risk claim routes to risk_technical and is
-# checked against risk_agent's volatility_annualized, never price_agent's
-# daily-scale figure, so the two can't be silently conflated.
+# risk_agent.py. risk_agent.py copies price_agent's volatility_20d straight
+# into risk_result's own output (alongside the volatility_annualized it
+# derives from that figure) -- so risk_result carries BOTH period variants,
+# and risk_technical claims must be allowed to match either one, not just
+# volatility_annualized, or a claim that names the 20-day figure gets
+# checked against the annualized one instead and false-contradicts.
 FUNDAMENTALS_EQUITY_FIELDS = ["pe_ratio", "revenue_growth_yoy", "eps", "profit_margin"]
 FUNDAMENTALS_ETF_FIELDS = ["expense_ratio", "nav_price", "total_assets", "category", "dividend_yield"]
 FUNDAMENTALS_ALL_FIELDS = FUNDAMENTALS_EQUITY_FIELDS + FUNDAMENTALS_ETF_FIELDS
 PRICE_TECHNICAL_FIELDS = ["current_price", "change_pct", "sma_20", "sma_50", "trend"]
-RISK_TECHNICAL_FIELDS = ["volatility_annualized", "risk_level"]
+RISK_TECHNICAL_FIELDS = ["volatility_20d", "volatility_annualized", "risk_level"]
 
 CLAIM_TYPE_TO_EVIDENCE_KEY = {
     "fundamentals": "fundamentals_result",
@@ -110,7 +111,7 @@ CATEGORICAL_FIELDS = {"trend", "risk_level", "category"}
 # tolerance misbehaves near zero (a claimed 1% vs. a real 3% is "200% off"
 # relatively but only 2 points apart, a minor discrepancy for a rough
 # transcript claim, not a contradiction).
-PERCENT_SCALE_FIELDS = {"revenue_growth_yoy", "profit_margin", "dividend_yield", "expense_ratio", "change_pct", "volatility_annualized"}
+PERCENT_SCALE_FIELDS = {"revenue_growth_yoy", "profit_margin", "dividend_yield", "expense_ratio", "change_pct", "volatility_annualized", "volatility_20d"}
 PERCENT_SCALE_TOLERANCE_PP = 2.0
 # Relative tolerance for raw-magnitude fields (P/E, EPS, prices, NAV, total
 # assets), with an absolute floor so small real values (e.g. EPS near zero)
@@ -161,6 +162,23 @@ def _extract_numeric_anchor(claim: Claim, allowed_fields: list[str]) -> ClaimAnc
     narrower call_structured_model call -- not regex. Free-text phrasing
     ("a P/E of 23", "trading at 23x earnings", "P/E ratio around 23") is
     exactly what an LLM parses reliably and a hand-rolled parser doesn't."""
+    categorical_in_scope = [f for f in allowed_fields if f in CATEGORICAL_FIELDS]
+    categorical_note = (
+        (
+            f"These valid metric names are CATEGORICAL -- a small fixed set of "
+            f"real values, not open-ended numbers: {', '.join(categorical_in_scope)}. "
+            "For these fields specifically, descriptive/adjectival phrasing that "
+            "names or clearly implies one of the field's real category values "
+            "(e.g. \"uptrending\" or \"rising\" implies trend=up, \"medium-risk\" "
+            "or \"moderate risk\" implies risk_level=medium) IS a definite value "
+            "assertion -- extract it via shape 1 below, with claimed_value set "
+            "to the implied category. Shape 4 (named_but_no_value) does NOT "
+            "apply to these fields: unlike an open-ended field where \"high\" or "
+            "\"strong\" doesn't correspond to one specific number, a categorical "
+            "field's descriptor IS its real value.\n\n"
+        )
+        if categorical_in_scope else ""
+    )
     system_prompt = (
         "You identify the single factual anchor inside a financial claim -- "
         "the specific metric and number (or metric-to-metric relationship) "
@@ -168,6 +186,14 @@ def _extract_numeric_anchor(claim: Claim, allowed_fields: list[str]) -> ClaimAnc
         "judge whether the claim's interpretation is reasonable; only "
         "identify what fact is being asserted.\n\n"
         f"Valid metric names for this claim: {', '.join(allowed_fields)}.\n\n"
+        "If the claim states a specific time period or basis (e.g. '20 "
+        "days', 'annualized', '50-day'), match it to the field whose name "
+        "reflects that same period -- never default to a same-concept "
+        "field that covers a different period just because it's the more "
+        "familiar or more prominent one (e.g. a claim about volatility "
+        "'over 20 days' must match a 20-day-scoped field, not an "
+        "annualized one, even if both exist in the valid list above).\n\n"
+        f"{categorical_note}"
         "Respond with ONLY a JSON object matching exactly one of four shapes:\n"
         '1. A single-value claim, where an actual number or named category '
         'is asserted (e.g. "the P/E ratio is 23", "the trend is up"): '
