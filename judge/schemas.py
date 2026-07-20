@@ -63,11 +63,23 @@ class ClaimAnchor(BaseModel):
     metric_b: str | None = None
 
 
+SentimentAnchorType = Literal["value", "no_match"]
+
+
 class SentimentAnchor(BaseModel):
-    """Shape for news_sentiment claims -- always a single categorical
-    assertion, no relational/no_match variant needed since a news_sentiment
-    claim is by construction about the one aggregate sentiment field."""
-    claimed_sentiment: Literal["positive", "negative", "neutral"]
+    """Shape for news_sentiment claims. anchor_type="value" is a genuine
+    aggregate-sentiment/market-mood assertion (e.g. "the recent headlines
+    are very positive") -- populates claimed_sentiment. anchor_type=
+    "no_match" means the claim reached this step tagged news_sentiment but
+    isn't actually asserting anything about the one aggregate sentiment
+    field -- most commonly a specific reported event/action (e.g. "Japan's
+    robotics leaders joined the Cosmos Coalition") with no sentiment
+    framing at all. Mirrors ClaimAnchor's no_match: the field this claim
+    would need to be checked against doesn't exist, so verify_claim must
+    score it unverifiable rather than coercing a placeholder positive/
+    negative/neutral label and comparing it against real data."""
+    anchor_type: SentimentAnchorType
+    claimed_sentiment: Literal["positive", "negative", "neutral"] | None = None
 
 
 class ArgumentTurn(BaseModel):

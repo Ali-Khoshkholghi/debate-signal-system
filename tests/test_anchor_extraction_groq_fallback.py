@@ -90,7 +90,7 @@ def test_extract_sentiment_anchor_survives_gemini_failure_via_groq_fallback(monk
         return make_model_result(
             model_used="llama-3.3-70b-versatile",
             escalated=True,
-            text='{"claimed_sentiment": "positive"}',
+            text='{"anchor_type": "value", "claimed_sentiment": "positive"}',
         )
 
     monkeypatch.setattr(router_mod, "_call_groq", _groq_sentiment)

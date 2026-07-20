@@ -341,7 +341,7 @@ def test_verify_claim_verified_news_sentiment_claim(monkeypatch):
     evidence = _news_evidence(sentiment="positive", confidence=0.9)
     monkeypatch.setattr(
         judge_agent_mod, "call_structured_model",
-        lambda *a, **k: make_structured_result(data=SentimentAnchor(claimed_sentiment="positive")),
+        lambda *a, **k: make_structured_result(data=SentimentAnchor(anchor_type="value", claimed_sentiment="positive")),
     )
 
     result = verify_claim(claim, evidence)
