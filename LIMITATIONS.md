@@ -1,10 +1,11 @@
 # Known limitations (detail)
 
-**Small live-test sample.** 5 tickers tested end-to-end (AAPL, TSLA,
-MSFT, TQQQ, GOOGL), all in one session. That sample found and fixed four
-real, outcome-flipping bugs — which says more about how much was left to
-find than about how clean the code is now. No claim of correctness beyond
-"these 5 debates, checked by hand, now come out right."
+**Small live-test sample.** 6 tickers tested end-to-end (AAPL, TSLA,
+MSFT, TQQQ, GOOGL, NVDA), across two sessions. That sample found and
+fixed five real, outcome-flipping bugs — which says more about how much
+was left to find than about how clean the code is now. No claim of
+correctness beyond "these 6 debates, checked by hand, now come out
+right."
 
 **Free-tier API quotas still apply.** The Gemini -> Groq -> Cerebras
 fallback chain raises the effective daily ceiling, it doesn't remove it.

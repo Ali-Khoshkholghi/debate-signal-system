@@ -205,13 +205,44 @@ asking it to multiply a decimal by a 9-digit number correctly every time,
 which is exactly the kind of computation this project consistently keeps
 in deterministic code instead of an LLM's hands.
 
+**5. Event/fact claims misrouted to `news_sentiment`, forced into a false
+sentiment judgment**
+
+Two Bull claims — *"Japan's robotics leaders joined the Cosmos
+Coalition"* and *"H200 AI chips are being shipped to China"* — are
+specific reported events, not assertions about market sentiment. Both
+were classified `claim_type="news_sentiment"` during extraction, then
+anchor-extracted into a forced `claimed_sentiment` (one came back
+`"neutral"`) and compared against the aggregate news sentiment label
+(`positive`) — `CONTRADICTED`. This flipped a real NVDA debate: Bull
+would have gone 7 verified/1 contradicted (credibility 0.75, likely
+Inconclusive against Bear's 0.714); scoring 7/3 (credibility 0.4) handed
+Bear an undeserved clear win.
+
+Root cause: `news_sentiment` was defined too broadly ("a claim about news
+coverage or sentiment toward the stock") and, unlike fundamentals/price/
+risk claims — which can correctly fall through to `unverifiable` via a
+`no_match` anchor type when no real evidence field applies —
+`SentimentAnchor` had no equivalent escape hatch. Every claim routed to
+`news_sentiment` was structurally forced into a `positive`/`negative`/
+`neutral` judgment, even when it wasn't a sentiment assertion at all.
+Confirmed systemic, not phrasing-specific: unrelated event claims (a
+manufacturing partnership, an acquisition, a new research lab) reproduced
+the same misrouting.
+
+Fixed by (1) narrowing the classification prompt's `news_sentiment`
+definition to genuine aggregate-sentiment/market-mood assertions only,
+explicitly excluding specific reported events/actions, and (2) adding a
+`no_match` anchor type to `SentimentAnchor`, mirroring `ClaimAnchor`'s
+existing pattern — the same two-layer fix shape as bugs #1 and #3 above.
+
 ## Known limitations
 
 Full detail in [`LIMITATIONS.md`](LIMITATIONS.md). Headline items:
 
-- **Small live-test sample** — 5 tickers tested end-to-end so far (AAPL,
-  TSLA, MSFT, TQQQ, GOOGL). Enough to find and fix four real bugs, not
-  enough to be confident the verification layer is bug-free.
+- **Small live-test sample** — 6 tickers tested end-to-end so far (AAPL,
+  TSLA, MSFT, TQQQ, GOOGL, NVDA). Enough to find and fix five real bugs,
+  not enough to be confident the verification layer is bug-free.
 - **Free-tier API quotas still apply** — three fallback tiers raise the
   daily ceiling, they don't remove it; Cerebras' free tier has its own
   transient "high traffic" limits, observed directly during testing.
